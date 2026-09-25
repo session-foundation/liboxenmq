@@ -204,15 +204,19 @@ public:
      * closing the connection.  Setting this only affects new outgoing connections. */
     std::chrono::milliseconds HANDSHAKE_TIME = 10s;
 
-    /** Whether to use a random zmq routing ID, or one based on the pubkey for new outgoing
-     * connections.  Using the pubkey is desirable when connections between endpoints are unique as
-     * it allows the listener to recognize that the incoming connection is a reconnection from the
-     * same remote and handover routing to the new socket while closing off the (likely dead) old
-     * socket.  This, however, prevents a single OxenMQ instance (or multiple OxenMQ instances using
-     * the same keys) from establishing multiple connections to the same listening OxenMQ, which is
-     * sometimes useful (for example when testing, or when sharing an authentication key), and so
-     * this option can be overridden to `true` to use completely random zmq routing ids on outgoing
-     * connections (which will thus allow multiple connections).
+    /** Whether to use a random zmq routing ID, or one derived from our private key and the remote's
+     * pubkey for new outgoing connections.  The derived ID (which only we can compute) is
+     * desirable when connections between endpoints are unique as it allows the listener to
+     * recognize that the incoming connection is a reconnection from the same remote and handover
+     * routing to the new socket while closing off the (likely dead) old socket.  This, however,
+     * prevents a single OxenMQ instance (or multiple OxenMQ instances using the same keys) from
+     * establishing multiple connections to the same listening OxenMQ, which is sometimes useful
+     * (for example when testing, or when sharing an authentication key), and so this option can be
+     * overridden to `true` to use completely random zmq routing ids on outgoing connections (which
+     * will thus allow multiple connections).
+     *
+     * Plaintext (i.e. non-curve) connections always use a random routing ID as there are no keys
+     * from which to derive one.
      *
      * Note that this only affects the default for outgoing connections: you can override an
      * individual connection by passing a connect_option::ephemeral_routing_id option into the
@@ -552,7 +556,7 @@ private:
     /// @param keep_alive the keep alive for the connection, if we establish a new outgoing
     /// connection.  If we already have an outgoing connection then its keep-alive gets increased to
     /// this if currently less than this.
-    /// @param ephemeral_routing_id whether or not to use a random (true) or pubkey-based (false) routing id
+    /// @param ephemeral_routing_id whether or not to use a random (true) or key-derived (false) routing id
     std::pair<zmq::socket_t*, std::string> proxy_connect_sn(std::string_view pubkey,
             std::string_view connect_hint, bool optional, bool incoming_only, bool outgoing_only,
             bool ephemeral_routing_id, std::chrono::milliseconds keep_alive);
@@ -1490,7 +1494,7 @@ struct queue_full {
 /// Namespace for options to the connect_remote()/connect_sn() methods
 namespace connect_option {
 
-/// Specifies whether the connection should use pubkey-based routing for this connection, overriding
+/// Specifies whether the connection should use key-derived routing for this connection, overriding
 /// the default (OxenMQ::EPHEMERAL_ROUTING_ID).  See OxenMQ::EPHEMERAL_ROUTING_ID for a description
 /// of this.
 ///
@@ -1498,7 +1502,7 @@ namespace connect_option {
 struct ephemeral_routing_id {
     bool use_ephemeral_routing_id = true;
     // Constructor; default construction gives you ephemeral routing id, but the bool parameter can
-    // be specified as false to use pubkey routing flag.
+    // be specified as false to use key-derived routing.
     explicit ephemeral_routing_id(bool use = true) : use_ephemeral_routing_id{use} {}
 };
 

@@ -3,6 +3,8 @@
 #include <oxenc/hex.h>
 #include <optional>
 #include <fmt/chrono.h>
+#include <sodium/crypto_generichash_blake2b.h>
+#include <sodium/randombytes.h>
 
 #ifdef OXENMQ_USE_EPOLL
 extern "C" {
@@ -23,6 +25,39 @@ void add_pollitem(std::vector<zmq::pollitem_t>& pollitems, zmq::socket_t& sock) 
     p.socket = static_cast<void *>(sock);
     p.fd = 0;
     p.events = ZMQ_POLLIN;
+}
+
+// Routing ids all get a non-\0 prefix byte because zmq reserves routing ids beginning with \0 for
+// its own auto-generated ids.
+
+// We choose our own random id rather than letting zmq assign one because zmq's are a sequential
+// counter, and we want routing ids to be unguessable.
+std::string random_routing_id() {
+    std::string id(1 + 32, 'R');
+    randombytes_buf(&id[1], 32);
+    return id;
+}
+
+// An unguessable routing id (computing it requires our private key) that is nonetheless stable
+// across reconnections to the same remote, so that ROUTER_HANDOVER still lets a reconnection take
+// over a (likely dead) previous connection.  The listener treats it as opaque and never needs to
+// compute it.
+//
+// Falls back to a random id if we have no remote pubkey (i.e. plaintext connections) as there is
+// then no key from which to derive a stable, unguessable id.
+std::string derived_routing_id(std::string_view privkey, std::string_view remote_pubkey) {
+    if (remote_pubkey.empty())
+        return random_routing_id();
+
+    static_assert(sizeof("omq-routing-id__") - 1 == crypto_generichash_blake2b_PERSONALBYTES);
+    std::string id(1 + 32, 'K');
+    crypto_generichash_blake2b_salt_personal(
+            reinterpret_cast<unsigned char*>(&id[1]), 32,
+            reinterpret_cast<const unsigned char*>(remote_pubkey.data()), remote_pubkey.size(),
+            reinterpret_cast<const unsigned char*>(privkey.data()), privkey.size(),
+            nullptr,
+            reinterpret_cast<const unsigned char*>("omq-routing-id__"));
+    return id;
 }
 
 } // anonymous namespace
@@ -91,14 +126,9 @@ void OxenMQ::setup_outgoing_socket(zmq::socket_t& socket, std::string_view remot
         socket.set(zmq::sockopt::curve_secretkey, privkey);
     }
 
-    if (!use_ephemeral_routing_id) {
-        std::string routing_id;
-        routing_id.reserve(33);
-        routing_id += 'L'; // Prefix because routing id's starting with \0 are reserved by zmq (and our pubkey might start with \0)
-        routing_id.append(pubkey.begin(), pubkey.end());
-        socket.set(zmq::sockopt::routing_id, routing_id);
-    }
-    // else let ZMQ pick a random one
+    socket.set(zmq::sockopt::routing_id, use_ephemeral_routing_id
+            ? random_routing_id()
+            : derived_routing_id(privkey, remote_pubkey));
 }
 
 
