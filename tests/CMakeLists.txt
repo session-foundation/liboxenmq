@@ -11,6 +11,7 @@ add_executable(tests
     test_inject.cpp
     test_pubsub.cpp
     test_requests.cpp
+    test_routing_id.cpp
     test_socket_limit.cpp
     test_tagged_threads.cpp
     test_timer.cpp
