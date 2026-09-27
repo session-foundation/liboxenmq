@@ -1,3 +1,10 @@
+oxenmq (1.3.2-4~ubuntu2404) noble; urgency=medium
+
+  * Install the bundled libzmq's zmq.h, and point pkg-config at it
+  * Rediff patches
+
+ -- Jason Rhinelander <jason@session.foundation>  Sun, 27 Sep 2026 16:30:59 -0300
+
 oxenmq (1.3.2-3~ubuntu2404) noble; urgency=medium
 
   * Rebuild
