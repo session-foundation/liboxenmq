@@ -66,7 +66,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 configure_file(oxenmq/version.h.in oxenmq/version.h @ONLY)
-configure_file(liboxenmq.pc.in liboxenmq.pc @ONLY)
 
 
 add_library(oxenmq
@@ -143,7 +142,10 @@ else()
         option(BUILD_STATIC_libzmq "Build against session-deps' static libzmq rather than a system one" ON)
     endif()
     session_dep(libzmq 4.3)
-    if(BUILD_SHARED_LIBS AND TARGET sessiondep_ext_libzmq)
+    if(TARGET sessiondep_ext_libzmq)
+        set(oxenmq_bundled_libzmq ON)
+    endif()
+    if(BUILD_SHARED_LIBS AND oxenmq_bundled_libzmq)
         # A static libzmq inside the shared library is an implementation detail: nothing links it
         # from outside, and its zmq_* symbols are kept out of the exports so that a system libzmq
         # loaded into the same process can never be picked in its place at symbol resolution and
@@ -190,6 +192,18 @@ endif()
 
 add_library(oxenmq::oxenmq ALIAS oxenmq)
 
+# oxenmq.h includes zmq.hpp, which includes <zmq.h>, so consumers need libzmq's header even though
+# nothing else of libzmq reaches them.  With a bundled libzmq that header is installed beside
+# zmq.hpp, and its directory goes on the pkg-config search path because an angle-bracket include
+# does not look beside the including file; there is then no libzmq.pc for Requires.private either.
+set(OXENMQ_PC_REQUIRES_PRIVATE "libzmq libsodium")
+set(OXENMQ_PC_CFLAGS "-I\${includedir}")
+if(oxenmq_bundled_libzmq)
+    set(OXENMQ_PC_REQUIRES_PRIVATE "libsodium")
+    set(OXENMQ_PC_CFLAGS "-I\${includedir} -I\${includedir}/oxenmq")
+endif()
+configure_file(liboxenmq.pc.in liboxenmq.pc @ONLY)
+
 if(OXENMQ_INSTALL)
     install(
         TARGETS oxenmq
@@ -215,6 +229,12 @@ if(OXENMQ_INSTALL)
             FILES cppzmq/zmq.hpp
             DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/oxenmq
             )
+        if(oxenmq_bundled_libzmq)
+            install(
+                FILES ${SESSIONDEPS_DESTDIR}/include/zmq.h
+                DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/oxenmq
+                )
+        endif()
     endif()
 
 
