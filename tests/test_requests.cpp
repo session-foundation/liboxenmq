@@ -177,3 +177,59 @@ TEST_CASE("request timeouts", "[requests][timeout]") {
     REQUIRE( data == std::vector<std::string>{{"TIMEOUT"}} );
 
 }
+
+TEST_CASE("mass request timeouts", "[requests][timeout]") {
+    std::string listen = random_localhost();
+    OxenMQ server{
+        "", "", // generate ephemeral keys
+        false, // not a service node
+        [](auto) { return ""; },
+    };
+    server.listen_curve(listen);
+
+    server.add_category("public", Access{AuthLevel::none});
+    server.add_request_command("public", "blackhole", [&](Message& m) { /* doesn't reply */ });
+    server.start();
+
+    OxenMQ client{};
+
+    // Long enough that every request below expires before the same cleanup pass.
+    client.CONN_CHECK_INTERVAL = 1s;
+
+    client.start();
+
+    std::atomic<bool> connected{false}, failed{false};
+
+    auto c = client.connect_remote(address{listen, server.get_pubkey()},
+            [&](auto) { connected = true; },
+            [&](auto, auto) { failed = true; });
+
+    wait_for([&] { return connected || failed; });
+
+    REQUIRE( connected );
+    REQUIRE_FALSE( failed );
+
+    // The proxy queues the failure callback for each expired request from its own thread.  More
+    // than the control socket's pipe can hold (2000 jobs: the high-water marks of both ends, in
+    // whole messages) is what it takes to find out whether that goes through the pipe, where the
+    // proxy would be waiting on itself.
+    constexpr int N = 2500;
+    std::atomic<int> timeouts{0}, other{0};
+    for (int i = 0; i < N; i++) {
+        client.request(c, "public.blackhole", [&](bool ok, std::vector<std::string> data) {
+                if (!ok && data == std::vector<std::string>{{"TIMEOUT"}})
+                    timeouts++;
+                else
+                    other++;
+            },
+            oxenmq::send_option::request_timeout{20ms}
+        );
+    }
+
+    wait_for([&] { return timeouts + other >= N; }, 3s);
+    {
+        auto lock = catch_lock();
+        REQUIRE( timeouts == N );
+        REQUIRE( other == 0 );
+    }
+}
