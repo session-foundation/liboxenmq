@@ -17,7 +17,7 @@ cmake_minimum_required(VERSION 3.10...3.31)
 set(CMAKE_OSX_DEPLOYMENT_TARGET 10.12 CACHE STRING "macOS deployment target (Apple clang only)")
 
 project(liboxenmq
-    VERSION 1.3.1
+    VERSION 1.3.2
     LANGUAGES CXX C)
 
 include(GNUInstallDirs)
@@ -52,6 +52,14 @@ option(OXENMQ_USE_EPOLL "Build with epoll support for socket polling (requires L
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
+# session-deps provides libzmq and libsodium: system libraries when acceptable, static builds
+# otherwise (BUILD_STATIC_DEPS, or per library BUILD_STATIC_libzmq / BUILD_STATIC_libsodium).  Its
+# static builds use LTO by default, which a link that does not itself use LTO cannot consume under
+# clang; nothing here enables LTO, so it is off unless a parent project has already decided.
+set(SESSIONDEPS_LTO OFF CACHE BOOL "Use LTO for static dependency builds, where supported")
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/session-deps/Deps.cmake)
+check_submodule(cmake/session-deps)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -85,27 +93,15 @@ if(TARGET oxen::logging)
     target_link_libraries(_oxenmq_external_logging INTERFACE oxen::logging)
     target_link_libraries(oxenmq PRIVATE _oxenmq_external_logging)
     message(STATUS "using pre-existing oxen::logging target")
-elseif(BUILD_SHARED_LIBS)
-    include(FindPkgConfig)
-    pkg_check_modules(OXENLOGGING liboxen-logging>=1.2.0)
-    if(OXENLOGGING_FOUND)
-        # If we load oxen-logging via system lib then we won't necessarily have fmt/spdlog targets,
-        # but this script will give us them:
-        include(oxen-logging/cmake/load_fmt_spdlog.cmake)
-
-        add_library(omq_logging_fmt_spdlog INTERFACE)
-        target_link_libraries(omq_logging_fmt_spdlog INTERFACE oxen-logging ${OXEN_LOGGING_FMT_TARGET} ${OXEN_LOGGING_SPDLOG_TARGET})
-        add_library(oxen::logging ALIAS omq_logging_fmt_spdlog)
-        target_link_libraries(oxenmq PUBLIC oxen::logging)
-    endif()
-endif()
-if(NOT TARGET oxen::logging)
+else()
     if(APPLE)
         # LTO is usually broken on macOS, just like most things under the surface.
         set(USE_LTO OFF CACHE INTERNAL "")
     endif()
-    set(OXEN_LOGGING_FORCE_SUBMODULES ON CACHE INTERNAL "")
-    add_subdirectory(oxen-logging)
+    # oxen-logging resolves oxen::logging itself: a system liboxen-logging together with suitable
+    # fmt and spdlog targets, or else the submodule.  OXEN_LOGGING_FORCE_SUBMODULES (implied by
+    # BUILD_STATIC_DEPS) skips the system library and takes the bundled fmt and spdlog too.
+    include(${CMAKE_CURRENT_SOURCE_DIR}/oxen-logging/cmake/load.cmake)
     target_link_libraries(oxenmq PUBLIC oxen::logging)
 endif()
 
@@ -133,41 +129,36 @@ else()
     target_link_libraries(oxenmq PUBLIC oxenc::oxenc)
 endif()
 
-# libzmq is nearly impossible to link statically from a system-installed static library: it depends
-# on a ton of other libraries, some of which are not all statically available.  If the caller wants
-# to mess with this, so be it: they can set up a libzmq target and we'll use it.  Otherwise if they
-# asked us to do things statically, don't even try to find a system lib and just build it.
-set(oxenmq_build_static_libzmq OFF)
+# The static libzmq is worth asking for (BUILD_STATIC_libzmq) even where a system one exists: every
+# release through 4.3.5 can abort the process when a connection dies while its receive pipe is full,
+# and session-deps' copy carries the fix (see deps/libzmq.cmake there).  A parent project that has
+# already set up a `libzmq` target of its own keeps it.
 if(TARGET libzmq)
     target_link_libraries(oxenmq PUBLIC libzmq)
-elseif(BUILD_SHARED_LIBS)
-    include(FindPkgConfig)
-    pkg_check_modules(libzmq libzmq>=4.3 IMPORTED_TARGET)
-
-    if(libzmq_FOUND)
-        # Debian sid includes a -isystem in the mit-krb package that, starting with pkg-config 0.29.2,
-        # breaks cmake's pkgconfig module because it stupidly thinks "-isystem" is a path, so if we find
-        # -isystem in the include dirs then hack it out.
-        get_property(zmq_inc TARGET PkgConfig::libzmq PROPERTY INTERFACE_INCLUDE_DIRECTORIES)
-        list(FIND zmq_inc "-isystem" broken_isystem)
-        if(NOT broken_isystem EQUAL -1)
-          list(REMOVE_AT zmq_inc ${broken_isystem})
-          set_property(TARGET PkgConfig::libzmq PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${zmq_inc})
-        endif()
-
-        target_link_libraries(oxenmq PUBLIC PkgConfig::libzmq)
-    else()
-        set(oxenmq_build_static_libzmq ON)
-    endif()
 else()
-    set(oxenmq_build_static_libzmq ON)
-endif()
-
-if(oxenmq_build_static_libzmq)
-    message(STATUS "libzmq >= 4.3 not found or static build requested, building bundled version")
-    list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/local-libzmq")
-    include(LocalLibzmq)
-    target_link_libraries(oxenmq PUBLIC libzmq_vendor)
+    if(NOT BUILD_SHARED_LIBS)
+        # A static oxenmq has always brought its own libzmq rather than gambling on a system static
+        # archive, whose own dependencies are rarely all available statically.  A default, not
+        # forced: -DBUILD_STATIC_libzmq=OFF still picks a system libzmq known to be good.
+        option(BUILD_STATIC_libzmq "Build against session-deps' static libzmq rather than a system one" ON)
+    endif()
+    session_dep(libzmq 4.3)
+    if(BUILD_SHARED_LIBS AND TARGET sessiondep_ext_libzmq)
+        # A static libzmq inside the shared library is an implementation detail: nothing links it
+        # from outside, and its zmq_* symbols are kept out of the exports so that a system libzmq
+        # loaded into the same process can never be picked in its place at symbol resolution and
+        # quietly reintroduce the bug the static copy fixes.  Consumers still need zmq.h for
+        # zmq.hpp, so the headers stay on the interface.
+        set(oxenmq_private_libzmq ON)
+        target_link_libraries(oxenmq PRIVATE sessiondep::libzmq)
+        target_include_directories(oxenmq PUBLIC
+            $<BUILD_INTERFACE:$<TARGET_PROPERTY:sessiondep::libzmq,INTERFACE_INCLUDE_DIRECTORIES>>)
+        if(NOT APPLE)
+            target_link_options(oxenmq PRIVATE "LINKER:--exclude-libs,libzmq.a")
+        endif()
+    else()
+        target_link_libraries(oxenmq PUBLIC sessiondep::libzmq)
+    endif()
 endif()
 
 target_include_directories(oxenmq
@@ -189,39 +180,12 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_L
     target_compile_options(oxenmq PRIVATE -Wno-error=restrict)
 endif()
 
-function(link_dep_libs target linktype libdirs)
-    foreach(lib ${ARGN})
-        find_library(link_lib-${lib} NAMES ${lib} PATHS ${libdirs})
-        if(link_lib-${lib})
-            target_link_libraries(${target} ${linktype} ${link_lib-${lib}})
-        endif()
-    endforeach()
-endfunction()
-
-# If the caller has already set up a sodium target then we will just link to it, otherwise we go
-# looking for it.
+# libsodium likewise; a parent's `sodium` target takes precedence.
 if(TARGET sodium)
     target_link_libraries(oxenmq PUBLIC sodium)
-    if(oxenmq_build_static_libzmq)
-        target_link_libraries(libzmq_vendor INTERFACE sodium)
-    endif()
 else()
-    include(FindPkgConfig)
-    pkg_check_modules(sodium REQUIRED libsodium IMPORTED_TARGET)
-
-    if(BUILD_SHARED_LIBS)
-        target_link_libraries(oxenmq PUBLIC PkgConfig::sodium)
-        if(oxenmq_build_static_libzmq)
-            target_link_libraries(libzmq_vendor INTERFACE PkgConfig::sodium)
-        endif()
-    else()
-        link_dep_libs(oxenmq PUBLIC "${sodium_STATIC_LIBRARY_DIRS}" ${sodium_STATIC_LIBRARIES})
-        target_include_directories(oxenmq PUBLIC ${sodium_STATIC_INCLUDE_DIRS})
-        if(oxenmq_build_static_libzmq)
-            link_dep_libs(libzmq_vendor INTERFACE "${sodium_STATIC_LIBRARY_DIRS}" ${sodium_STATIC_LIBRARIES})
-            target_include_directories(libzmq_vendor INTERFACE ${sodium_STATIC_INCLUDE_DIRS})
-        endif()
-    endif()
+    session_dep(libsodium 1.0.17)
+    target_link_libraries(oxenmq PUBLIC sessiondep::libsodium)
 endif()
 
 add_library(oxenmq::oxenmq ALIAS oxenmq)
