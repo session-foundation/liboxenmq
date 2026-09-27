@@ -6,8 +6,13 @@
 #include <catch2/matchers/catch_matchers.hpp>
 #include <catch2/matchers/catch_matchers_exception.hpp>
 #include <chrono>
+#include <random>
 #include <oxen/log.hpp>
 #include "oxenmq/fmt.h"
+
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 using namespace oxenmq;
 
@@ -25,13 +30,26 @@ constexpr int TIME_DILATION =
 
 static auto startup = std::chrono::steady_clock::now();
 
-/// Returns a localhost connection string to listen on.  It can be considered random, though in
-/// practice in the current implementation is sequential starting at 25432.
+inline std::atomic<uint16_t> last_port = 20000 + std::random_device{}() % 20000;
+
+/// Returns a localhost connection string to listen on, on a port nothing is currently bound to.
+/// Ports are handed out sequentially from a start chosen at random per process, and each one is
+/// checked with a throwaway bind() first: several copies of this suite can run on one machine at
+/// the same time (the macOS CI builders do), and a fixed sequence had them collide.
 inline std::string random_localhost() {
-    static std::atomic<uint16_t> last = 25432;
-    last++;
-    assert(last); // We should never call this enough to overflow
-    return "tcp://127.0.0.1:" + std::to_string(last);
+    while (true) {
+        uint16_t port = ++last_port;
+        assert(port); // We should never call this enough to overflow
+        int fd = socket(AF_INET, SOCK_STREAM, 0);
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(port);
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        bool free = bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof addr) == 0;
+        close(fd);
+        if (free)
+            return "tcp://127.0.0.1:" + std::to_string(port);
+    }
 }
 
 

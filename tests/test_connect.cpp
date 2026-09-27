@@ -473,7 +473,7 @@ TEST_CASE("SN backchatter", "[connect][sn]") {
         .add_command("b", [&](Message& m) {
             {
                 auto lock = catch_lock();
-                UNSCOPED_INFO("b.b from conn " << fmt::to_string(m.conn));
+                UNSCOPED_INFO("b.b from conn " << m.conn.to_string());
             }
             m.send_back("a.z", m.data[0]);
         });
