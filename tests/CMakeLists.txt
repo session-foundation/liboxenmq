@@ -21,6 +21,12 @@ find_package(Threads)
 
 target_link_libraries(tests Catch2::Catch2 oxenmq Threads::Threads oxen::logging)
 
+# Several tests drive raw zmq sockets of their own (over TCP, never sharing objects with oxenmq),
+# and a shared oxenmq built with a static libzmq keeps that copy to itself.
+if(oxenmq_private_libzmq)
+    target_link_libraries(tests sessiondep::libzmq)
+endif()
+
 set_target_properties(tests PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
