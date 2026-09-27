@@ -1,3 +1,9 @@
+oxenmq (1.3.2-1~ubuntu2604) resolute; urgency=medium
+
+  * Build with static libzmq
+
+ -- Jason Rhinelander <jason@session.foundation>  Sun, 27 Sep 2026 15:57:20 -0300
+
 oxenmq (1.3.2-1~ubuntu2204) jammy; urgency=medium
 
   * Take libzmq and libsodium from session-deps, with libzmq's heartbeat abort fixed
