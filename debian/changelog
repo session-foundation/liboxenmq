@@ -1,5 +1,13 @@
 oxenmq (1.3.2-1~deb13) trixie; urgency=medium
 
+  * Build with static libzmq
+  * Install the bundled libzmq's zmq.h, and point pkg-config at it
+  * Rediff patches
+
+ -- Jason Rhinelander <jason@session.foundation>  Sun, 27 Sep 2026 15:53:09 -0300
+
+oxenmq (1.3.2-1~deb13) trixie; urgency=medium
+
   * Take libzmq and libsodium from session-deps, with libzmq's heartbeat abort fixed
   * Never send the proxy's own jobs through its control socket
   * bump version
