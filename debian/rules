@@ -32,6 +32,7 @@ endif
 override_dh_auto_configure:
 	debian/gen-liboxenmq-install.sh $(DEB_VERSION_UPSTREAM)
 	dh_auto_configure -- -DOXENMQ_INSTALL_CPPZMQ=ON \
+		-DBUILD_STATIC_libzmq=ON \
 		$(DEB_CMAKE_ARCH_OPTIONS) \
 		-DOXENMQ_BUILD_TESTS=OFF
 
