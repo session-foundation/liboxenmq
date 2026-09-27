@@ -32,6 +32,12 @@ void OxenMQ::job(std::function<void()> f, std::optional<TaggedThreadID> thread) 
         throw std::logic_error{"job() cannot be used to queue an in-proxy job"};
     auto* j = new Job(std::move(f), thread);
     auto* baseptr = static_cast<detail::Batch*>(j);
+    // The control socket's only reader is the proxy thread, so a job queued from that thread has
+    // to go straight into the proxy's queues: once the control pipe reaches its high-water mark
+    // the send waits for a read that only this thread can perform.  proxy_conn_cleanup() queues a
+    // job per expired request in one pass, which is enough to fill it.
+    if (std::this_thread::get_id() == proxy_thread.get_id())
+        return proxy_batch(baseptr);
     detail::send_control(get_control_socket(), "BATCH", oxenc::bt_serialize(reinterpret_cast<uintptr_t>(baseptr)));
 }
 
