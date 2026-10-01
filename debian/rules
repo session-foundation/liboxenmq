@@ -36,10 +36,6 @@ override_dh_auto_configure:
 		$(DEB_CMAKE_ARCH_OPTIONS) \
 		-DOXENMQ_BUILD_TESTS=OFF
 
-
-override_dh_builddeb:
-	dh_builddeb -- -Zxz
-
 # dh_make generated override targets
 # This is example for Cmake (See https://bugs.debian.org/641051 )
 #override_dh_auto_configure:
