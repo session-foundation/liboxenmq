@@ -37,10 +37,6 @@ override_dh_auto_configure:
 		-DOXEN_LOGGING_FMT_HEADER_ONLY=ON -DOXEN_LOGGING_SPDLOG_HEADER_ONLY=ON -DOXEN_LOGGING_FORCE_SUBMODULES=ON \
 		-DOXENMQ_BUILD_TESTS=OFF
 
-
-override_dh_builddeb:
-	dh_builddeb -- -Zxz
-
 # dh_make generated override targets
 # This is example for Cmake (See https://bugs.debian.org/641051 )
 #override_dh_auto_configure:
