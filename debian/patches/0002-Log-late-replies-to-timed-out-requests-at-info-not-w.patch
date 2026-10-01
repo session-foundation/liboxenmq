@@ -1,0 +1,34 @@
+From: Jason Rhinelander <jason@imaginary.ca>
+Date: Wed, 30 Sep 2026 22:30:38 -0300
+Subject: Log late replies to timed-out requests at info, not warning
+
+A REPLY whose tag is no longer pending is almost always the answer to a
+request that already timed out (and whose callback already fired with a
+failure), so it isn't actionable; on busy nodes it floods the logs.
+info puts it alongside the other ignored-remote-message logs in auth.cpp.
+---
+ oxenmq/proxy.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/oxenmq/proxy.cpp b/oxenmq/proxy.cpp
+index 307edb4..bb48678 100644
+--- a/oxenmq/proxy.cpp
++++ b/oxenmq/proxy.cpp
+@@ -727,7 +727,7 @@ bool OxenMQ::proxy_handle_builtin(int64_t conn_id, zmq::socket_t& sock, std::vec
+             });
+             pending_requests.erase(it);
+         } else {
+-            log::warning(cat, "Received REPLY with unknown or already handled reply tag ({}); ignoring", log_hex(reply_tag));
++            log::info(cat, "Received REPLY with unknown or already handled reply tag ({}); ignoring", log_hex(reply_tag));
+         }
+         return true;
+     } else if (cmd == "HI") {
+@@ -802,7 +802,7 @@ bool OxenMQ::proxy_handle_builtin(int64_t conn_id, zmq::socket_t& sock, std::vec
+                 });
+                 pending_requests.erase(it);
+             } else {
+-                log::warning(cat, "Received REPLY with unknown or already handled reply tag ({}); ignoring", log_hex(reply_tag));
++                log::info(cat, "Received REPLY with unknown or already handled reply tag ({}); ignoring", log_hex(reply_tag));
+             }
+         } else {
+             log::warning(
