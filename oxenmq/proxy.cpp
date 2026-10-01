@@ -727,7 +727,7 @@ bool OxenMQ::proxy_handle_builtin(int64_t conn_id, zmq::socket_t& sock, std::vec
             });
             pending_requests.erase(it);
         } else {
-            log::warning(cat, "Received REPLY with unknown or already handled reply tag ({}); ignoring", log_hex(reply_tag));
+            log::info(cat, "Received REPLY with unknown or already handled reply tag ({}); ignoring", log_hex(reply_tag));
         }
         return true;
     } else if (cmd == "HI") {
@@ -802,7 +802,7 @@ bool OxenMQ::proxy_handle_builtin(int64_t conn_id, zmq::socket_t& sock, std::vec
                 });
                 pending_requests.erase(it);
             } else {
-                log::warning(cat, "Received REPLY with unknown or already handled reply tag ({}); ignoring", log_hex(reply_tag));
+                log::info(cat, "Received REPLY with unknown or already handled reply tag ({}); ignoring", log_hex(reply_tag));
             }
         } else {
             log::warning(
