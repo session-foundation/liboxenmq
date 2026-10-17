@@ -1,3 +1,9 @@
+oxenmq (1.3.2-5~ubuntu2204+1) jammy; urgency=medium
+
+  * Fix liboxenmq needing an unpackaged liboxen-logging.so
+
+ -- Jason Rhinelander <jason@session.foundation>  Fri, 16 Oct 2026 22:28:55 -0300
+
 oxenmq (1.3.2-5~ubuntu2204) jammy; urgency=medium
 
   * ci-upload: upload .ddeb debug packages and .buildinfo files
