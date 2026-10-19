@@ -1,2 +1,3 @@
 0002-Fully-version-library.patch
 0002-Log-late-replies-to-timed-out-requests-at-info-not-w.patch
+0003-Fix-zmq-API-leakage-into-public-API.patch
