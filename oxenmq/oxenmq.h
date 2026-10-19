@@ -45,6 +45,7 @@
 #include <cstdint>
 #include <future>
 #include <variant>
+#include <exception>
 #include "zmq.hpp"
 #include "address.h"
 #include <oxenc/bt_serialize.h>
@@ -1476,7 +1477,7 @@ struct request_timeout {
 /// cases (such as when a message is queued but the connection fails before delivery) that do not
 /// trigger this failure at all; rather this callback only signals an immediate queuing failure.
 struct queue_failure {
-    using callback_t = std::function<void(const zmq::error_t* exc)>;
+    using callback_t = std::function<void(const std::exception* exc)>;
     /// Callback; invoked with nullptr for a queue full failure, otherwise will be set to a copy of
     /// the raised exception.
     callback_t callback;
